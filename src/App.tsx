@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
+import { CircleProvider } from './context/CircleContext';
 import { Layout } from './components/layout/Layout';
 import { Home } from './pages/Home';
 import { Login } from './pages/Login';
@@ -8,12 +10,19 @@ import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
 import { MoodTrackerPage } from './pages/MoodTracker';
 import { CirclesPage } from './pages/Circles';
+import { CircleDetailPage } from './pages/CircleDetail';
 import { JournalPage } from './pages/Journal';
 import { ExplorePage } from './pages/Explore';
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Wait for auth check to complete
+  if (isLoading) {
+    return <div style={{ padding: 40, textAlign: 'center', color: '#a0a0b0' }}>Loading...</div>;
+  }
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
@@ -21,8 +30,16 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 // Auth Route wrapper (redirect if already logged in)
+// Don't block on loading - show auth pages immediately, redirect when auth completes
 const AuthRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // If still loading, show the page (don't block login/signup)
+  if (isLoading) {
+    return <>{children}</>;
+  }
+
+  // If authenticated, redirect to dashboard
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -44,6 +61,7 @@ function AppRoutes() {
         <Route path="mood" element={<ProtectedRoute><MoodTrackerPage /></ProtectedRoute>} />
         <Route path="journal" element={<ProtectedRoute><JournalPage /></ProtectedRoute>} />
         <Route path="circles" element={<ProtectedRoute><CirclesPage /></ProtectedRoute>} />
+        <Route path="circles/:circleId" element={<ProtectedRoute><CircleDetailPage /></ProtectedRoute>} />
         <Route path="explore" element={<ProtectedRoute><ExplorePage /></ProtectedRoute>} />
       </Route>
     </Routes>
@@ -53,9 +71,13 @@ function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <CircleProvider>
+            <AppRoutes />
+          </CircleProvider>
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   );
 }

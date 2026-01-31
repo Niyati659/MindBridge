@@ -1,14 +1,26 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import type { User } from '../types';
-import { storage } from '../utils/storage';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { supabase, type Profile } from '../lib/supabase';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+
+interface User {
+    id: string;
+    email: string;
+    username: string;
+    displayName: string;
+    bio: string;
+    avatar: string;
+    interests: string[];
+    createdAt: string;
+}
 
 interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
-    login: (email: string, password: string) => { success: boolean; error?: string };
-    signup: (email: string, username: string, password: string) => { success: boolean; error?: string };
-    logout: () => void;
-    updateProfile: (updates: Partial<User>) => void;
+    isLoading: boolean;
+    login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+    signup: (email: string, username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+    logout: () => Promise<void>;
+    updateProfile: (updates: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -21,87 +33,158 @@ export const useAuth = () => {
     return context;
 };
 
-interface AuthProviderProps {
-    children: ReactNode;
-}
+// Convert Supabase profile to our User type
+const profileToUser = (profile: Profile, email: string): User => ({
+    id: profile.id,
+    email,
+    username: profile.username,
+    displayName: profile.display_name || profile.username,
+    bio: profile.bio || '',
+    avatar: profile.avatar_url || '',
+    interests: profile.interests || [],
+    createdAt: profile.created_at,
+});
 
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         // Check for existing session
-        const savedUser = storage.getCurrentUser() as User | null;
-        if (savedUser) {
-            setUser(savedUser);
-        }
-    }, []);
-
-    const login = (email: string, password: string) => {
-        const users = storage.getUsers() as Array<User & { password: string }>;
-        const foundUser = users.find(
-            (u) => (u.email === email || u.username === email) && u.password === password
-        );
-
-        if (foundUser) {
-            const { password: _, ...userWithoutPassword } = foundUser;
-            setUser(userWithoutPassword);
-            storage.setCurrentUser(userWithoutPassword);
-            return { success: true };
-        }
-        return { success: false, error: 'Invalid email/username or password' };
-    };
-
-    const signup = (email: string, username: string, password: string) => {
-        const users = storage.getUsers() as Array<User & { password: string }>;
-
-        // Check if email or username exists
-        if (users.some((u) => u.email === email)) {
-            return { success: false, error: 'Email already exists' };
-        }
-        if (users.some((u) => u.username === username)) {
-            return { success: false, error: 'Username already taken' };
-        }
-
-        const newUser: User & { password: string } = {
-            id: crypto.randomUUID(),
-            email,
-            username,
-            password,
-            displayName: username,
-            bio: '',
-            avatar: '',
-            interests: [],
-            createdAt: new Date().toISOString(),
+        const initAuth = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                await loadUserProfile(session.user);
+            }
+            setIsLoading(false);
         };
 
-        users.push(newUser);
-        storage.setUsers(users);
+        initAuth();
 
-        const { password: _, ...userWithoutPassword } = newUser;
-        setUser(userWithoutPassword);
-        storage.setCurrentUser(userWithoutPassword);
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            console.log('Auth state change:', event, session?.user?.id);
+            if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') && session?.user) {
+                await loadUserProfile(session.user);
+            } else if (event === 'SIGNED_OUT') {
+                setUser(null);
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const loadUserProfile = async (authUser: SupabaseUser) => {
+        console.log('loadUserProfile: Starting for user:', authUser.id);
+
+        try {
+            console.log('loadUserProfile: Making Supabase request...');
+
+            // Race between the query and a timeout
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error('Query timeout after 10s')), 10000);
+            });
+
+            const queryPromise = supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', authUser.id)
+                .single();
+
+            const { data: profile, error } = await Promise.race([queryPromise, timeoutPromise]);
+
+            console.log('loadUserProfile: Query completed', { profile, error });
+
+            if (error) {
+                console.error('loadUserProfile: Failed to load profile:', error);
+                return;
+            }
+
+            if (profile) {
+                console.log('loadUserProfile: Setting user state with profile:', profile.username);
+                setUser(profileToUser(profile, authUser.email || ''));
+                console.log('loadUserProfile: User state updated');
+            } else {
+                console.warn('loadUserProfile: No profile found for user');
+            }
+        } catch (err) {
+            console.error('loadUserProfile: Caught error:', err);
+        }
+        console.log('loadUserProfile: Done');
+    };
+
+    const login = async (email: string, password: string) => {
+        const startTime = Date.now();
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+        console.log(`login: ${Date.now() - startTime} ms`);
+
+        if (error) {
+            console.error('Login error:', error);
+            if (error.message.includes('rate') || error.status === 429) {
+                return { success: false, error: 'Too many attempts. Please wait a few minutes.' };
+            }
+            return { success: false, error: error.message };
+        }
+
+        // Load profile directly and wait for it (with timeout)
+        if (data.user) {
+            await loadUserProfile(data.user);
+        }
 
         return { success: true };
     };
 
-    const logout = () => {
-        setUser(null);
-        storage.clearCurrentUser();
+    const signup = async (email: string, username: string, password: string) => {
+        // Username uniqueness is enforced by database constraint
+        // Profile is created via trigger with username from metadata
+        const { error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    username,
+                    display_name: username,
+                },
+            },
+        });
+
+        if (error) {
+            // Handle rate limiting
+            if (error.message.includes('rate') || error.status === 429) {
+                return { success: false, error: 'Too many attempts. Please wait a few minutes and try again.' };
+            }
+            // Handle duplicate email
+            if (error.message.includes('already registered')) {
+                return { success: false, error: 'This email is already registered. Try logging in instead.' };
+            }
+            return { success: false, error: error.message };
+        }
+        return { success: true };
     };
 
-    const updateProfile = (updates: Partial<User>) => {
+    const logout = async () => {
+        await supabase.auth.signOut();
+        setUser(null);
+    };
+
+    const updateProfile = async (updates: Partial<User>) => {
         if (!user) return;
 
-        const updatedUser = { ...user, ...updates };
-        setUser(updatedUser);
-        storage.setCurrentUser(updatedUser);
+        const { error } = await supabase
+            .from('profiles')
+            .update({
+                display_name: updates.displayName,
+                bio: updates.bio,
+                avatar_url: updates.avatar,
+                interests: updates.interests,
+            })
+            .eq('id', user.id);
 
-        // Also update in users database
-        const users = storage.getUsers() as Array<User & { password: string }>;
-        const index = users.findIndex((u) => u.id === user.id);
-        if (index !== -1) {
-            users[index] = { ...users[index], ...updates };
-            storage.setUsers(users);
+        if (!error) {
+            setUser({ ...user, ...updates });
         }
     };
 
@@ -110,6 +193,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             value={{
                 user,
                 isAuthenticated: !!user,
+                isLoading,
                 login,
                 signup,
                 logout,

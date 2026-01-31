@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Frown, Meh, Smile, Heart, Star, Clock, Calendar, Lock, Globe, Users } from 'lucide-react';
+import { supabase, type MoodLogRow } from '../lib/supabase';
+import { Frown, Meh, Smile, Clock, Calendar, Lock, Globe, Loader2 } from 'lucide-react';
 
 interface MoodLog {
     id: string;
-    userId: string;
-    value: 'good' | 'neutral' | 'bad';
-    note: string;
+    mood: 'good' | 'neutral' | 'bad';
+    note: string | null;
     date: string;
-    visibility: 'private' | 'circle' | 'public';
+    visibility: 'private' | 'public';
     createdAt: string;
 }
 
@@ -24,53 +24,93 @@ export const MoodTrackerPage = () => {
     const [selectedMood, setSelectedMood] = useState<'good' | 'neutral' | 'bad' | null>(null);
     const [note, setNote] = useState('');
     const [visibility, setVisibility] = useState<'private' | 'public'>('private');
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
 
     const today = new Date().toISOString().split('T')[0];
 
-    useEffect(() => {
+    const loadLogs = useCallback(async () => {
         if (!user) return;
-        const saved = JSON.parse(localStorage.getItem('mindbridge_mood_logs') || '[]');
-        const userLogs = saved.filter((log: MoodLog) => log.userId === user.id);
-        setLogs(userLogs);
+        setIsLoading(true);
 
-        // Check if already logged today
-        const todayLog = userLogs.find((log: MoodLog) => log.date === today);
-        if (todayLog) {
-            setSelectedMood(todayLog.value);
-            setNote(todayLog.note);
-            setVisibility(todayLog.visibility === 'circle' ? 'private' : todayLog.visibility);
+        const { data } = await supabase
+            .from('mood_logs')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('date', { ascending: false })
+            .limit(30);
+
+        if (data) {
+            const mappedLogs = data.map((row: MoodLogRow) => ({
+                id: row.id,
+                mood: row.mood,
+                note: row.note,
+                date: row.date,
+                visibility: row.visibility,
+                createdAt: row.created_at,
+            }));
+            setLogs(mappedLogs);
+
+            // Check if already logged today
+            const todayLog = mappedLogs.find(log => log.date === today);
+            if (todayLog) {
+                setSelectedMood(todayLog.mood);
+                setNote(todayLog.note || '');
+                setVisibility(todayLog.visibility);
+            }
         }
-    }, [user?.id, today]);
+        setIsLoading(false);
+    }, [user, today]);
 
-    const handleSave = () => {
+    useEffect(() => {
+        loadLogs();
+    }, [loadLogs]);
+
+    const handleSave = async () => {
         if (!selectedMood || !user) return;
+        setIsSaving(true);
 
-        const allLogs = JSON.parse(localStorage.getItem('mindbridge_mood_logs') || '[]');
+        // Check if entry exists for today
+        const existingLog = logs.find(log => log.date === today);
 
-        // Remove existing log for today if any
-        const filteredLogs = allLogs.filter(
-            (log: MoodLog) => !(log.userId === user.id && log.date === today)
-        );
+        if (existingLog) {
+            // Update existing
+            await supabase
+                .from('mood_logs')
+                .update({
+                    mood: selectedMood,
+                    note: note || null,
+                    visibility,
+                })
+                .eq('id', existingLog.id);
+        } else {
+            // Insert new
+            await supabase
+                .from('mood_logs')
+                .insert({
+                    user_id: user.id,
+                    mood: selectedMood,
+                    note: note || null,
+                    visibility,
+                    date: today,
+                });
+        }
 
-        const newLog: MoodLog = {
-            id: crypto.randomUUID(),
-            userId: user.id,
-            value: selectedMood,
-            note,
-            date: today,
-            visibility,
-            createdAt: new Date().toISOString(),
-        };
-
-        filteredLogs.unshift(newLog);
-        localStorage.setItem('mindbridge_mood_logs', JSON.stringify(filteredLogs));
-
-        setLogs(filteredLogs.filter((log: MoodLog) => log.userId === user.id));
+        await loadLogs();
+        setIsSaving(false);
     };
 
     const todayLogged = logs.some(log => log.date === today);
-
     const getMoodInfo = (value: string) => moods.find(m => m.value === value) || moods[1];
+
+    if (isLoading) {
+        return (
+            <div className="page-container" style={{ maxWidth: 500, textAlign: 'center', paddingTop: 100 }}>
+                <Loader2 size={32} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+                <p style={{ marginTop: 12, color: '#888' }}>Loading moods...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="page-container" style={{ maxWidth: 500 }}>
@@ -165,10 +205,10 @@ export const MoodTrackerPage = () => {
                 <button
                     className="btn-primary"
                     style={{ width: '100%' }}
-                    disabled={!selectedMood}
+                    disabled={!selectedMood || isSaving}
                     onClick={handleSave}
                 >
-                    {todayLogged ? 'Update Entry' : 'Log Mood'}
+                    {isSaving ? 'Saving...' : todayLogged ? 'Update Entry' : 'Log Mood'}
                 </button>
             </div>
 
@@ -188,7 +228,7 @@ export const MoodTrackerPage = () => {
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {logs.slice(0, 14).map((log) => {
-                            const moodInfo = getMoodInfo(log.value);
+                            const moodInfo = getMoodInfo(log.mood);
                             const Icon = moodInfo.icon;
                             const isToday = log.date === today;
                             return (

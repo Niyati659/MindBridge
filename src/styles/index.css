@@ -1,13 +1,50 @@
 /* MindBridge - Pure CSS Design System */
 
 :root {
+  /* Brand Colors */
   --primary: #8b5cf6;
   --primary-dark: #7c3aed;
+  --primary-light: #a78bfa;
+
+  /* Semantic Colors */
+  --success: #10b981;
+  --error: #ef4444;
+  --warning: #f59e0b;
+  --info: #3b82f6;
+
+  /* Background */
   --bg-dark: #0f0f1a;
   --bg-card: rgba(30, 30, 50, 0.8);
+  --bg-elevated: rgba(40, 40, 60, 0.9);
+
+  /* Text */
   --text-white: #ffffff;
   --text-gray: #a0a0b0;
+  --text-muted: #666;
+
+  /* Border */
   --border: rgba(255, 255, 255, 0.1);
+  --border-focus: rgba(139, 92, 246, 0.5);
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px rgba(139, 92, 246, 0.3);
 }
 
 * {
@@ -24,6 +61,18 @@ body {
     radial-gradient(ellipse at bottom right, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
   min-height: 100vh;
   color: var(--text-white);
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 /* Card */

@@ -1,22 +1,41 @@
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { Smile, BookOpen, Users, TrendingUp, ChevronRight, Sparkles } from 'lucide-react';
+import { Smile, BookOpen, Users, ChevronRight, Sparkles } from 'lucide-react';
+import { MoodChart } from '../components/features/MoodChart';
+import type { MoodLog } from '../types';
+
+interface RawMoodLog extends MoodLog {
+    userId: string;
+}
 
 export const Dashboard = () => {
-    const { user } = useAuth();
+    const { user, isLoading } = useAuth();
     const navigate = useNavigate();
 
-    if (!user) {
-        navigate('/login');
-        return null;
+    // Wait for auth to finish loading
+    if (isLoading) {
+        return (
+            <div className="page-container" style={{ maxWidth: 600, textAlign: 'center', paddingTop: 100 }}>
+                <p style={{ color: '#a0a0b0' }}>Loading...</p>
+            </div>
+        );
     }
 
-    // Check if mood logged today
+    // Only redirect if auth is done loading and no user
+    if (!user) {
+        // Use useEffect for navigation side effects, but for now just render redirect message
+        return (
+            <div className="page-container" style={{ maxWidth: 600, textAlign: 'center', paddingTop: 100 }}>
+                <p style={{ color: '#a0a0b0' }}>Redirecting to login...</p>
+            </div>
+        );
+    }
+
+    // Get mood logs
     const today = new Date().toISOString().split('T')[0];
-    const moodLogs = JSON.parse(localStorage.getItem('mindbridge_mood_logs') || '[]');
-    const todayMood = moodLogs.find((log: { userId: string; date: string }) =>
-        log.userId === user.id && log.date === today
-    );
+    const allMoodLogs: RawMoodLog[] = JSON.parse(localStorage.getItem('mindbridge_mood_logs') || '[]');
+    const userMoods = allMoodLogs.filter(log => log.userId === user.id);
+    const todayMood = userMoods.find(log => log.date === today);
 
     return (
         <div className="page-container" style={{ maxWidth: 600 }}>
@@ -52,6 +71,12 @@ export const Dashboard = () => {
                     </div>
                 </div>
             )}
+
+            {/* Mood Trends Chart */}
+            <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16, color: '#a0a0b0' }}>Your Mood Trends</h2>
+            <div className="card" style={{ marginBottom: 24, padding: 20 }}>
+                <MoodChart moods={userMoods} />
+            </div>
 
             {/* Quick Actions */}
             <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16, color: '#a0a0b0' }}>Quick Actions</h2>

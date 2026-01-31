@@ -1,5 +1,45 @@
-// User and Auth types for MindBridge
+// Circle and related types
+export interface Circle {
+    id: string;
+    name: string;
+    description: string;
+    tags: string[];
+    coverImage?: string;
+    visibility: 'public' | 'private';
+    createdBy: string;
+    createdAt: string;
+    memberCount: number;
+}
 
+export interface CircleMembership {
+    circleId: string;
+    userId: string;
+    role: 'admin' | 'member';
+    joinedAt: string;
+    status: 'active' | 'pending';
+}
+
+export interface Post {
+    id: string;
+    circleId: string;
+    authorId: string;
+    authorName: string;
+    title: string;
+    body: string;
+    createdAt: string;
+    commentCount: number;
+}
+
+export interface Comment {
+    id: string;
+    postId: string;
+    authorId: string;
+    authorName: string;
+    body: string;
+    createdAt: string;
+}
+
+// User type
 export interface User {
     id: string;
     email: string;
@@ -11,72 +51,23 @@ export interface User {
     createdAt: string;
 }
 
-export interface AuthState {
-    user: User | null;
-    isAuthenticated: boolean;
-}
-
-export interface MoodEntry {
+// Mood types
+export interface MoodLog {
     id: string;
     userId: string;
-    value: 'good' | 'neutral' | 'bad';
-    note: string;
-    date: string; // YYYY-MM-DD
-    visibility: 'private' | 'circle' | 'public';
-    circleIds?: string[];
+    mood: 'good' | 'neutral' | 'bad';
+    note?: string;
+    visibility: 'private' | 'public';
+    date: string;
     createdAt: string;
 }
 
-export interface Circle {
-    id: string;
-    title: string;
-    description: string;
-    tags: string[];
-    visibility: 'public' | 'private';
-    coverImage?: string;
-    creatorId: string;
-    adminIds: string[];
-    memberIds: string[];
-    pendingIds: string[]; // for private circles
-    createdAt: string;
-}
-
-export interface Post {
-    id: string;
-    circleId: string;
-    authorId: string;
-    title: string;
-    body: string;
-    attachment?: string;
-    createdAt: string;
-    updatedAt: string;
-}
-
-export interface Comment {
-    id: string;
-    postId: string;
-    authorId: string;
-    body: string;
-    createdAt: string;
-}
-
+// Journal types
 export interface JournalEntry {
     id: string;
     userId: string;
     title: string;
     body: string;
     visibility: 'private' | 'circle' | 'public';
-    circleIds?: string[];
-    createdAt: string;
-    updatedAt: string;
-}
-
-export interface Notification {
-    id: string;
-    userId: string;
-    type: 'comment' | 'join_request' | 'circle_update';
-    message: string;
-    link?: string;
-    read: boolean;
     createdAt: string;
 }

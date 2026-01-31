@@ -1,67 +1,88 @@
-// localStorage utility functions
+// Storage Adapter Interface
+// This abstraction allows swapping localStorage for Supabase/Firebase later
 
-const STORAGE_KEYS = {
-    USER: 'mindbridge_user',
-    USERS: 'mindbridge_users',
-    MOOD_LOGS: 'mindbridge_mood_logs',
-    CIRCLES: 'mindbridge_circles',
-    POSTS: 'mindbridge_posts',
-    COMMENTS: 'mindbridge_comments',
-    JOURNALS: 'mindbridge_journals',
-    NOTIFICATIONS: 'mindbridge_notifications',
-};
+export interface StorageAdapter {
+    get<T>(key: string): T | null;
+    set<T>(key: string, value: T): void;
+    remove(key: string): void;
+    clear(): void;
+}
 
-export const storage = {
-    // Generic get/set
-    get: <T>(key: string): T | null => {
+class LocalStorageAdapter implements StorageAdapter {
+    get<T>(key: string): T | null {
         try {
             const item = localStorage.getItem(key);
             return item ? JSON.parse(item) : null;
         } catch {
+            console.error(`Error reading ${key} from localStorage`);
             return null;
         }
-    },
+    }
 
-    set: <T>(key: string, value: T): void => {
-        localStorage.setItem(key, JSON.stringify(value));
-    },
+    set<T>(key: string, value: T): void {
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch {
+            console.error(`Error writing ${key} to localStorage`);
+        }
+    }
 
-    remove: (key: string): void => {
+    remove(key: string): void {
         localStorage.removeItem(key);
-    },
+    }
 
-    // Auth
-    getCurrentUser: () => storage.get(STORAGE_KEYS.USER),
-    setCurrentUser: (user: unknown) => storage.set(STORAGE_KEYS.USER, user),
-    clearCurrentUser: () => storage.remove(STORAGE_KEYS.USER),
+    clear(): void {
+        localStorage.clear();
+    }
+}
+
+// Export singleton instance
+export const storageAdapter: StorageAdapter = new LocalStorageAdapter();
+
+// Storage keys - centralized for type safety
+export const STORAGE_KEYS = {
+    CURRENT_USER: 'mindbridge_current_user',
+    USERS: 'mindbridge_users',
+    MOOD_LOGS: 'mindbridge_mood_logs',
+    JOURNALS: 'mindbridge_journals',
+    CIRCLES: 'mindbridge_circles',
+    MEMBERSHIPS: 'mindbridge_memberships',
+    POSTS: 'mindbridge_posts',
+    COMMENTS: 'mindbridge_comments',
+} as const;
+
+// Typed storage helpers
+export const storage = {
+    // User operations
+    getCurrentUser: () => storageAdapter.get(STORAGE_KEYS.CURRENT_USER),
+    setCurrentUser: <T>(user: T) => storageAdapter.set(STORAGE_KEYS.CURRENT_USER, user),
+    clearCurrentUser: () => storageAdapter.remove(STORAGE_KEYS.CURRENT_USER),
 
     // Users database
-    getUsers: () => storage.get(STORAGE_KEYS.USERS) || [],
-    setUsers: (users: unknown) => storage.set(STORAGE_KEYS.USERS, users),
+    getUsers: () => storageAdapter.get(STORAGE_KEYS.USERS) || [],
+    setUsers: <T>(users: T) => storageAdapter.set(STORAGE_KEYS.USERS, users),
 
     // Mood logs
-    getMoodLogs: () => storage.get(STORAGE_KEYS.MOOD_LOGS) || [],
-    setMoodLogs: (logs: unknown) => storage.set(STORAGE_KEYS.MOOD_LOGS, logs),
-
-    // Circles
-    getCircles: () => storage.get(STORAGE_KEYS.CIRCLES) || [],
-    setCircles: (circles: unknown) => storage.set(STORAGE_KEYS.CIRCLES, circles),
-
-    // Posts
-    getPosts: () => storage.get(STORAGE_KEYS.POSTS) || [],
-    setPosts: (posts: unknown) => storage.set(STORAGE_KEYS.POSTS, posts),
-
-    // Comments
-    getComments: () => storage.get(STORAGE_KEYS.COMMENTS) || [],
-    setComments: (comments: unknown) => storage.set(STORAGE_KEYS.COMMENTS, comments),
+    getMoodLogs: () => storageAdapter.get(STORAGE_KEYS.MOOD_LOGS) || [],
+    setMoodLogs: <T>(logs: T) => storageAdapter.set(STORAGE_KEYS.MOOD_LOGS, logs),
 
     // Journals
-    getJournals: () => storage.get(STORAGE_KEYS.JOURNALS) || [],
-    setJournals: (journals: unknown) => storage.set(STORAGE_KEYS.JOURNALS, journals),
+    getJournals: () => storageAdapter.get(STORAGE_KEYS.JOURNALS) || [],
+    setJournals: <T>(journals: T) => storageAdapter.set(STORAGE_KEYS.JOURNALS, journals),
 
-    // Notifications
-    getNotifications: () => storage.get(STORAGE_KEYS.NOTIFICATIONS) || [],
-    setNotifications: (notifs: unknown) => storage.set(STORAGE_KEYS.NOTIFICATIONS, notifs),
+    // Circles
+    getCircles: () => storageAdapter.get(STORAGE_KEYS.CIRCLES),
+    setCircles: <T>(circles: T) => storageAdapter.set(STORAGE_KEYS.CIRCLES, circles),
+
+    // Memberships
+    getMemberships: () => storageAdapter.get(STORAGE_KEYS.MEMBERSHIPS) || [],
+    setMemberships: <T>(memberships: T) => storageAdapter.set(STORAGE_KEYS.MEMBERSHIPS, memberships),
+
+    // Posts
+    getPosts: () => storageAdapter.get(STORAGE_KEYS.POSTS) || [],
+    setPosts: <T>(posts: T) => storageAdapter.set(STORAGE_KEYS.POSTS, posts),
+
+    // Comments
+    getComments: () => storageAdapter.get(STORAGE_KEYS.COMMENTS) || [],
+    setComments: <T>(comments: T) => storageAdapter.set(STORAGE_KEYS.COMMENTS, comments),
 };
-
-export { STORAGE_KEYS };

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { UserPlus, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle } from 'lucide-react';
 
 export const Signup = () => {
     const [email, setEmail] = useState('');
@@ -9,14 +9,16 @@ export const Signup = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
 
     const { signup } = useAuth();
     const navigate = useNavigate();
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setSuccess('');
         setLoading(true);
 
         // Validation
@@ -44,10 +46,11 @@ export const Signup = () => {
             return;
         }
 
-        const result = signup(email, username, password);
+        const result = await signup(email, username, password);
 
         if (result.success) {
-            navigate('/dashboard');
+            setSuccess('Account created! Redirecting to dashboard...');
+            setTimeout(() => navigate('/dashboard'), 1500);
         } else {
             setError(result.error || 'Signup failed');
         }
@@ -78,6 +81,24 @@ export const Signup = () => {
                         }}>
                             <AlertCircle size={16} />
                             {error}
+                        </div>
+                    )}
+
+                    {success && (
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: 12,
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            borderRadius: 8,
+                            marginBottom: 16,
+                            color: '#10b981',
+                            fontSize: 14
+                        }}>
+                            <CheckCircle size={16} />
+                            {success}
                         </div>
                     )}
 
