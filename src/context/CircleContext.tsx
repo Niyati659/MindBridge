@@ -3,21 +3,47 @@ import { supabase, type CircleRow, type MembershipRow, type PostRow, type Commen
 import { useAuth } from './AuthContext';
 import type { Circle, CircleMembership, Post, Comment } from '../types';
 
+interface CircleMember {
+    userId: string;
+    username: string;
+    displayName: string;
+    role: 'admin' | 'member';
+    status: 'active' | 'pending';
+    joinedAt: string;
+}
+
 interface CircleContextType {
     circles: Circle[];
     myCircles: Circle[];
     joinedCircles: Circle[];
+    adminCircles: Circle[];
     posts: Post[];
     isLoading: boolean;
     createCircle: (circle: Omit<Circle, 'id' | 'createdAt' | 'memberCount' | 'createdBy'>) => Promise<Circle | null>;
     joinCircle: (circleId: string) => Promise<void>;
     leaveCircle: (circleId: string) => Promise<void>;
     isJoined: (circleId: string) => boolean;
+    isAdmin: (circleId: string) => boolean;
+    isPending: (circleId: string) => boolean;
     getCirclePosts: (circleId: string) => Post[];
+    loadCirclePosts: (circleId: string) => Promise<void>;
     createPost: (circleId: string, title: string, body: string) => Promise<Post | null>;
     addComment: (postId: string, body: string) => Promise<Comment | null>;
     getComments: (postId: string) => Promise<Comment[]>;
     refreshCircles: () => Promise<void>;
+    // Admin functions
+    getCircleMembers: (circleId: string) => Promise<CircleMember[]>;
+    getPendingRequests: (circleId: string) => Promise<CircleMember[]>;
+    approveRequest: (circleId: string, userId: string) => Promise<boolean>;
+    rejectRequest: (circleId: string, userId: string) => Promise<boolean>;
+    removeMember: (circleId: string, userId: string) => Promise<boolean>;
+    promoteMember: (circleId: string, userId: string) => Promise<boolean>;
+    demoteMember: (circleId: string, userId: string) => Promise<boolean>;
+    updateCircle: (circleId: string, updates: Partial<Pick<Circle, 'name' | 'description' | 'tags' | 'visibility'>>) => Promise<boolean>;
+    deletePost: (postId: string) => Promise<boolean>;
+    editPost: (postId: string, title: string, body: string) => Promise<boolean>;
+    deleteComment: (commentId: string, postId: string) => Promise<boolean>;
+    editComment: (commentId: string, body: string) => Promise<boolean>;
 }
 
 const CircleContext = createContext<CircleContextType | null>(null);
@@ -109,6 +135,17 @@ export const CircleProvider = ({ children }: { children: ReactNode }) => {
     const joinedCircles = circles.filter(c =>
         memberships.some(m => m.circleId === c.id && m.status === 'active')
     );
+    const adminCircles = circles.filter(c =>
+        memberships.some(m => m.circleId === c.id && m.role === 'admin' && m.status === 'active')
+    );
+
+    const isAdmin = (circleId: string) => {
+        return memberships.some(m => m.circleId === circleId && m.role === 'admin' && m.status === 'active');
+    };
+
+    const isPending = (circleId: string) => {
+        return memberships.some(m => m.circleId === circleId && m.status === 'pending');
+    };
 
     const createCircle = async (data: Omit<Circle, 'id' | 'createdAt' | 'memberCount' | 'createdBy'>) => {
         if (!user) {
@@ -224,8 +261,32 @@ export const CircleProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const getCirclePosts = (circleId: string) => {
+        // Return cached posts for this circle
         return posts.filter(p => p.circleId === circleId);
     };
+
+    // Load posts for a circle from the database
+    const loadCirclePosts = useCallback(async (circleId: string) => {
+        const { data, error } = await supabase
+            .from('posts')
+            .select('*, profiles(*)')
+            .eq('circle_id', circleId)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error loading posts:', error);
+            return;
+        }
+
+        if (data) {
+            const loadedPosts = data.map(rowToPost);
+            // Replace all posts for this circle
+            setPosts(prev => {
+                const otherPosts = prev.filter(p => p.circleId !== circleId);
+                return [...otherPosts, ...loadedPosts];
+            });
+        }
+    }, []);
 
     const createPost = async (circleId: string, title: string, body: string) => {
         if (!user) return null;
@@ -275,22 +336,269 @@ export const CircleProvider = ({ children }: { children: ReactNode }) => {
         return data ? data.map(rowToComment) : [];
     };
 
+    // Admin functions
+    const getCircleMembers = async (circleId: string): Promise<CircleMember[]> => {
+        const { data } = await supabase
+            .from('circle_memberships')
+            .select('*, profiles(*)')
+            .eq('circle_id', circleId)
+            .eq('status', 'active')
+            .order('joined_at', { ascending: true });
+
+        return data ? data.map((m: MembershipRow & { profiles?: Profile }) => ({
+            userId: m.user_id,
+            username: m.profiles?.username || '',
+            displayName: m.profiles?.display_name || m.profiles?.username || 'Anonymous',
+            role: m.role as 'admin' | 'member',
+            status: m.status as 'active' | 'pending',
+            joinedAt: m.joined_at,
+        })) : [];
+    };
+
+    const getPendingRequests = async (circleId: string): Promise<CircleMember[]> => {
+        const { data } = await supabase
+            .from('circle_memberships')
+            .select('*, profiles(*)')
+            .eq('circle_id', circleId)
+            .eq('status', 'pending')
+            .order('joined_at', { ascending: true });
+
+        return data ? data.map((m: MembershipRow & { profiles?: Profile }) => ({
+            userId: m.user_id,
+            username: m.profiles?.username || '',
+            displayName: m.profiles?.display_name || m.profiles?.username || 'Anonymous',
+            role: m.role as 'admin' | 'member',
+            status: m.status as 'active' | 'pending',
+            joinedAt: m.joined_at,
+        })) : [];
+    };
+
+    const approveRequest = async (circleId: string, userId: string): Promise<boolean> => {
+        if (!isAdmin(circleId)) return false;
+
+        const { error } = await supabase
+            .from('circle_memberships')
+            .update({ status: 'active' })
+            .eq('circle_id', circleId)
+            .eq('user_id', userId);
+
+        if (!error) {
+            // Update member count
+            const circle = circles.find(c => c.id === circleId);
+            if (circle) {
+                await supabase
+                    .from('circles')
+                    .update({ member_count: circle.memberCount + 1 })
+                    .eq('id', circleId);
+            }
+            await refreshCircles();
+        }
+        return !error;
+    };
+
+    const rejectRequest = async (circleId: string, userId: string): Promise<boolean> => {
+        if (!isAdmin(circleId)) return false;
+
+        const { error } = await supabase
+            .from('circle_memberships')
+            .delete()
+            .eq('circle_id', circleId)
+            .eq('user_id', userId)
+            .eq('status', 'pending');
+
+        return !error;
+    };
+
+    const removeMember = async (circleId: string, userId: string): Promise<boolean> => {
+        if (!isAdmin(circleId)) return false;
+        if (userId === user?.id) return false; // Can't remove yourself
+
+        const { error } = await supabase
+            .from('circle_memberships')
+            .delete()
+            .eq('circle_id', circleId)
+            .eq('user_id', userId);
+
+        if (!error) {
+            const circle = circles.find(c => c.id === circleId);
+            if (circle) {
+                await supabase
+                    .from('circles')
+                    .update({ member_count: Math.max(0, circle.memberCount - 1) })
+                    .eq('id', circleId);
+            }
+            await refreshCircles();
+        }
+        return !error;
+    };
+
+    const promoteMember = async (circleId: string, userId: string): Promise<boolean> => {
+        if (!isAdmin(circleId)) return false;
+
+        const { error } = await supabase
+            .from('circle_memberships')
+            .update({ role: 'admin' })
+            .eq('circle_id', circleId)
+            .eq('user_id', userId);
+
+        if (!error) await refreshCircles();
+        return !error;
+    };
+
+    const demoteMember = async (circleId: string, userId: string): Promise<boolean> => {
+        if (!isAdmin(circleId)) return false;
+        if (userId === user?.id) return false; // Can't demote yourself
+
+        const { error } = await supabase
+            .from('circle_memberships')
+            .update({ role: 'member' })
+            .eq('circle_id', circleId)
+            .eq('user_id', userId);
+
+        if (!error) await refreshCircles();
+        return !error;
+    };
+
+    const updateCircle = async (circleId: string, updates: Partial<Pick<Circle, 'name' | 'description' | 'tags' | 'visibility'>>): Promise<boolean> => {
+        if (!isAdmin(circleId)) return false;
+
+        const { error } = await supabase
+            .from('circles')
+            .update({
+                name: updates.name,
+                description: updates.description,
+                tags: updates.tags,
+                visibility: updates.visibility,
+            })
+            .eq('id', circleId);
+
+        if (!error) await refreshCircles();
+        return !error;
+    };
+
+    const deletePost = async (postId: string): Promise<boolean> => {
+        if (!user) return false;
+
+        const post = posts.find(p => p.id === postId);
+        if (!post) return false;
+
+        // Only author or circle admin can delete
+        if (post.authorId !== user.id && !isAdmin(post.circleId)) return false;
+
+        const { error } = await supabase
+            .from('posts')
+            .delete()
+            .eq('id', postId);
+
+        if (!error) {
+            setPosts(prev => prev.filter(p => p.id !== postId));
+        }
+        return !error;
+    };
+
+    const editPost = async (postId: string, title: string, body: string): Promise<boolean> => {
+        if (!user) return false;
+
+        const post = posts.find(p => p.id === postId);
+        if (!post) return false;
+
+        // Author or admin can edit
+        if (post.authorId !== user.id && !isAdmin(post.circleId)) return false;
+
+        const { error } = await supabase
+            .from('posts')
+            .update({ title, body })
+            .eq('id', postId);
+
+        if (!error) {
+            setPosts(prev => prev.map(p => p.id === postId ? { ...p, title, body } : p));
+        }
+        return !error;
+    };
+
+    const deleteComment = async (commentId: string, postId: string): Promise<boolean> => {
+        if (!user) return false;
+
+        // Find the post to check if user is admin of that circle
+        const post = posts.find(p => p.id === postId);
+
+        const { data: comment } = await supabase
+            .from('comments')
+            .select('author_id')
+            .eq('id', commentId)
+            .single();
+
+        if (!comment) return false;
+
+        // Only author or circle admin can delete
+        if (comment.author_id !== user.id && (!post || !isAdmin(post.circleId))) return false;
+
+        const { error } = await supabase
+            .from('comments')
+            .delete()
+            .eq('id', commentId);
+
+        return !error;
+    };
+
+    const editComment = async (commentId: string, body: string): Promise<boolean> => {
+        if (!user) return false;
+
+        // Get comment to check ownership and find circle for admin check
+        const { data: comment } = await supabase
+            .from('comments')
+            .select('author_id, post_id')
+            .eq('id', commentId)
+            .single();
+
+        if (!comment) return false;
+
+        const post = posts.find(p => p.id === comment.post_id);
+
+        // Author or admin can edit
+        if (comment.author_id !== user.id && (!post || !isAdmin(post.circleId))) return false;
+
+        const { error } = await supabase
+            .from('comments')
+            .update({ body })
+            .eq('id', commentId);
+
+        return !error;
+    };
+
     return (
         <CircleContext.Provider value={{
             circles,
             myCircles,
             joinedCircles,
+            adminCircles,
             posts,
             isLoading,
             createCircle,
             joinCircle,
             leaveCircle,
             isJoined,
+            isAdmin,
+            isPending,
             getCirclePosts,
+            loadCirclePosts,
             createPost,
             addComment,
             getComments,
             refreshCircles,
+            // Admin functions
+            getCircleMembers,
+            getPendingRequests,
+            approveRequest,
+            rejectRequest,
+            removeMember,
+            promoteMember,
+            demoteMember,
+            updateCircle,
+            deletePost,
+            editPost,
+            deleteComment,
+            editComment,
         }}>
             {children}
         </CircleContext.Provider>

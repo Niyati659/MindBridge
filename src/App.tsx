@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { CircleProvider } from './context/CircleContext';
+import { FriendsProvider } from './context/FriendsContext';
+import { ChatProvider } from './context/ChatContext'; // Added ChatProvider import
 import { Layout } from './components/layout/Layout';
 import { Home } from './pages/Home';
 import { Login } from './pages/Login';
@@ -12,7 +14,9 @@ import { MoodTrackerPage } from './pages/MoodTracker';
 import { CirclesPage } from './pages/Circles';
 import { CircleDetailPage } from './pages/CircleDetail';
 import { JournalPage } from './pages/Journal';
-import { ExplorePage } from './pages/Explore';
+import { MyCirclesPage } from './pages/MyCircles';
+import { FriendsPage } from './pages/Friends';
+import { ChatPage } from './pages/Chat'; // Added ChatPage import
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -62,7 +66,9 @@ function AppRoutes() {
         <Route path="journal" element={<ProtectedRoute><JournalPage /></ProtectedRoute>} />
         <Route path="circles" element={<ProtectedRoute><CirclesPage /></ProtectedRoute>} />
         <Route path="circles/:circleId" element={<ProtectedRoute><CircleDetailPage /></ProtectedRoute>} />
-        <Route path="explore" element={<ProtectedRoute><ExplorePage /></ProtectedRoute>} />
+        <Route path="my-circles" element={<ProtectedRoute><MyCirclesPage /></ProtectedRoute>} />
+        <Route path="friends" element={<ProtectedRoute><FriendsPage /></ProtectedRoute>} />
+        <Route path="chat/:friendId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} /> {/* Added chat route */}
       </Route>
     </Routes>
   );
@@ -74,7 +80,11 @@ function App() {
       <ToastProvider>
         <AuthProvider>
           <CircleProvider>
-            <AppRoutes />
+            <FriendsProvider>
+              <ChatProvider> {/* Added ChatProvider */}
+                <AppRoutes />
+              </ChatProvider>
+            </FriendsProvider>
           </CircleProvider>
         </AuthProvider>
       </ToastProvider>

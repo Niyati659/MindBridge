@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Smile, BookOpen, Users, Compass, User, LogIn } from 'lucide-react';
+import { Home, Smile, BookOpen, Users, Settings, User, LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export const Navbar = () => {
@@ -13,7 +13,8 @@ export const Navbar = () => {
         { path: '/mood', label: 'Mood', icon: Smile },
         { path: '/journal', label: 'Journal', icon: BookOpen },
         { path: '/circles', label: 'Circles', icon: Users },
-        { path: '/explore', label: 'Explore', icon: Compass },
+        { path: '/friends', label: 'Friends', icon: UserPlus },
+        { path: '/my-circles', label: 'My Circles', icon: Settings },
     ] : [
         { path: '/', label: 'Home', icon: Home },
     ];

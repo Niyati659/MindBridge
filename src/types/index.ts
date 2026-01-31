@@ -71,3 +71,24 @@ export interface JournalEntry {
     visibility: 'private' | 'circle' | 'public';
     createdAt: string;
 }
+
+// Friendship types
+export interface Friendship {
+    id: string;
+    requesterId: string;
+    requesterName: string;
+    addresseeId: string;
+    addresseeName: string;
+    status: 'pending' | 'accepted' | 'rejected';
+    createdAt: string;
+}
+
+// Message types
+export interface Message {
+    id: string;
+    senderId: string;
+    receiverId: string;
+    content: string;
+    isRead: boolean;
+    createdAt: string;
+}
