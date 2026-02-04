@@ -1,29 +1,66 @@
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { Smile, BookOpen, Users, ChevronRight, Sparkles } from 'lucide-react';
+import { Smile, BookOpen, Users, ChevronRight, Sparkles, Loader2 } from 'lucide-react';
 import { MoodChart } from '../components/features/MoodChart';
+import { supabase } from '../lib/supabase';
 import type { MoodLog } from '../types';
 
-interface RawMoodLog extends MoodLog {
-    userId: string;
-}
 
 export const Dashboard = () => {
-    const { user, isLoading } = useAuth();
+    const { user, isLoading: authLoading } = useAuth();
     const navigate = useNavigate();
+    const [userMoods, setUserMoods] = useState<MoodLog[]>([]);
+    const [moodsLoading, setMoodsLoading] = useState(true);
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const loadMoods = useCallback(async () => {
+        if (!user) return;
+        setMoodsLoading(true);
+
+        const { data, error } = await supabase
+            .from('mood_logs')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('date', { ascending: false })
+            .limit(30);
+
+        if (error) {
+            console.error('Error loading mood logs:', error);
+        } else if (data) {
+            const mappedMoods: MoodLog[] = data.map((m: any) => ({
+                id: m.id,
+                userId: m.user_id,
+                mood: m.mood,
+                note: m.note,
+                visibility: m.visibility,
+                date: m.date,
+                createdAt: m.created_at
+            }));
+            setUserMoods(mappedMoods);
+        }
+        setMoodsLoading(false);
+    }, [user]);
+
+    useEffect(() => {
+        if (user) {
+            loadMoods();
+        }
+    }, [user, loadMoods]);
 
     // Wait for auth to finish loading
-    if (isLoading) {
+    if (authLoading) {
         return (
             <div className="page-container" style={{ maxWidth: 600, textAlign: 'center', paddingTop: 100 }}>
-                <p style={{ color: '#a0a0b0' }}>Loading...</p>
+                <Loader2 size={32} className="spin" style={{ animation: 'spin 1s linear infinite', color: '#8b5cf6' }} />
+                <p style={{ marginTop: 12, color: '#a0a0b0' }}>Loading your sanctuary...</p>
             </div>
         );
     }
 
     // Only redirect if auth is done loading and no user
     if (!user) {
-        // Use useEffect for navigation side effects, but for now just render redirect message
         return (
             <div className="page-container" style={{ maxWidth: 600, textAlign: 'center', paddingTop: 100 }}>
                 <p style={{ color: '#a0a0b0' }}>Redirecting to login...</p>
@@ -31,10 +68,6 @@ export const Dashboard = () => {
         );
     }
 
-    // Get mood logs
-    const today = new Date().toISOString().split('T')[0];
-    const allMoodLogs: RawMoodLog[] = JSON.parse(localStorage.getItem('mindbridge_mood_logs') || '[]');
-    const userMoods = allMoodLogs.filter(log => log.userId === user.id);
     const todayMood = userMoods.find(log => log.date === today);
 
     return (
@@ -74,8 +107,15 @@ export const Dashboard = () => {
 
             {/* Mood Trends Chart */}
             <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16, color: '#a0a0b0' }}>Your Mood Trends</h2>
-            <div className="card" style={{ marginBottom: 24, padding: 20 }}>
-                <MoodChart moods={userMoods} />
+            <div className="card" style={{ marginBottom: 24, padding: 20, minHeight: 200, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                {moodsLoading ? (
+                    <div style={{ textAlign: 'center', padding: 20 }}>
+                        <Loader2 size={24} className="spin" style={{ animation: 'spin 1s linear infinite', margin: '0 auto', color: '#8b5cf6' }} />
+                        <p style={{ fontSize: 12, color: '#666', marginTop: 8 }}>Analyzing trends...</p>
+                    </div>
+                ) : (
+                    <MoodChart moods={userMoods} />
+                )}
             </div>
 
             {/* Quick Actions */}
